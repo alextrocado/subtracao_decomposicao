@@ -1,7 +1,5 @@
 {
   "name": "Subtração por Decomposição",
   "description": "Aplicação educativa para aprender subtração usando o Método de Decomposição.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "requestFramePermissions": []
 }

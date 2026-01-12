@@ -1,16 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { generateMathExercise, analyzeResolutionPhoto } from './services/geminiService';
+import { generateMathExercise } from './services/geminiService';
 import { MathExercise, StepRowKey, RowState } from './types';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exercise, setExercise] = useState<MathExercise | null>(null);
   const [finalAnswer, setFinalAnswer] = useState('');
   const [isFinalCorrect, setIsFinalCorrect] = useState<boolean | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [rows, setRows] = useState<Record<StepRowKey, RowState>>({
     centenas: { expressao: '', resultado: '', isCorrect: null, attempts: 0, showDica: false },
@@ -18,7 +16,7 @@ const App: React.FC = () => {
     unidades: { expressao: '', resultado: '', isCorrect: null, attempts: 0, showDica: false },
   });
 
-  const fetchNewProblem = useCallback(async () => {
+  const fetchNewProblem = useCallback(() => {
     setLoading(true);
     setError(null);
     setFinalAnswer('');
@@ -28,14 +26,16 @@ const App: React.FC = () => {
       dezenas: { expressao: '', resultado: '', isCorrect: null, attempts: 0, showDica: false },
       unidades: { expressao: '', resultado: '', isCorrect: null, attempts: 0, showDica: false },
     });
+    
     try {
-      const data = await generateMathExercise();
+      const data = generateMathExercise();
       setExercise(data);
     } catch (e) { 
       console.error(e);
-      setError("Ups! Algo correu mal. Por favor, tenta novamente.");
+      setError("Ups! Algo correu mal ao gerar a conta.");
+    } finally { 
+      setLoading(false); 
     }
-    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { 
@@ -110,65 +110,15 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !exercise) return;
-
-    setAnalyzing(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64String = (event.target?.result as string).split(',')[1];
-      try {
-        const result = await analyzeResolutionPhoto(base64String, exercise);
-        
-        const newRows = { ...rows };
-        const keys: StepRowKey[] = ['centenas', 'dezenas', 'unidades'];
-        
-        keys.forEach(key => {
-          if (result[key]?.expressao || result[key]?.resultado) {
-            newRows[key] = {
-              ...newRows[key],
-              expressao: result[key].expressao || '',
-              resultado: result[key].resultado || '',
-              isCorrect: null,
-              showDica: false
-            };
-            const isCorrect = validateRow(key, newRows[key], exercise);
-            if (isCorrect) {
-              newRows[key].isCorrect = true;
-            }
-          }
-        });
-        
-        setRows(newRows);
-
-        if (result.resultado_final) {
-          setFinalAnswer(result.resultado_final);
-          if (parseInt(result.resultado_final) === exercise.res_final) {
-            setIsFinalCorrect(true);
-          } else {
-            setIsFinalCorrect(false);
-          }
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Não foi possível analisar a foto. Por favor, preenche manualmente.");
-      } finally {
-        setAnalyzing(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const getPlaceholder = (key: StepRowKey) => {
-    if (key === 'centenas') return "▢▢▢ - ▢00";
-    if (key === 'dezenas') return "▢▢▢ - ▢0";
+  const getPlaceholder = (rowKey: StepRowKey) => {
+    if (rowKey === 'centenas') return "▢▢▢ - ▢00";
+    if (rowKey === 'dezenas') return "▢▢▢ - ▢0";
     return "▢▢▢ - ▢";
   };
 
-  const getIcon = (key: StepRowKey) => {
-    if (key === 'centenas') return "🏛️";
-    if (key === 'dezenas') return "🔟";
+  const getIcon = (rowKey: StepRowKey) => {
+    if (rowKey === 'centenas') return "🏛️";
+    if (rowKey === 'dezenas') return "🔟";
     return "💎";
   };
 
@@ -184,12 +134,12 @@ const App: React.FC = () => {
       } else if (row.attempts === 1) {
         feedbackText = `Quase! 🧐 ${dicaOriginal}`;
       } else if (row.attempts === 2) {
-        feedbackText = `Cuidado! 🚨 Estás a subtrair o valor correto? Verifica no teu papel!`;
+        feedbackText = `Cuidado! 🚨 Estás a subtrair o valor correto? Tenta outra vez!`;
       }
     }
     
     return (
-      <div className="flex flex-col gap-1 mb-6 animate-fadeIn">
+      <div className="flex flex-col gap-1 mb-4 md:mb-6 animate-fadeIn">
         <div className="flex items-center gap-2 ml-1">
           <span className="text-base">{icon}</span>
           <label className="text-blue-500 font-black text-[10px] uppercase tracking-widest">{label}</label>
@@ -258,21 +208,10 @@ const App: React.FC = () => {
       </header>
 
       <main className="w-full max-w-2xl bg-white rounded-[25px] md:rounded-[35px] shadow-[0_15px_40px_rgba(0,0,0,0.05)] border-4 md:border-6 border-white p-3 md:p-6 relative overflow-hidden">
-        {analyzing && (
-           <div className="absolute inset-0 bg-white/90 z-50 flex flex-col items-center justify-center p-6 text-center animate-fadeIn backdrop-blur-sm">
-             <div className="relative mb-6">
-               <div className="w-16 h-16 border-6 border-blue-100 border-t-blue-500 rounded-full animate-spin"></div>
-               <div className="absolute inset-0 flex items-center justify-center text-2xl">📝</div>
-             </div>
-             <h3 className="text-xl font-black text-blue-900 mb-1">A analisar a tua letra...</h3>
-             <p className="text-sm text-blue-500 font-bold">À procura de centenas, dezenas e unidades no teu papel!</p>
-           </div>
-        )}
-
         {loading ? (
           <div className="py-16 text-center">
             <div className="w-12 h-12 border-6 border-blue-100 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-blue-400 font-black text-xl animate-pulse">A gerar um novo problema...</p>
+            <p className="text-blue-400 font-black text-xl animate-pulse">A preparar a conta...</p>
           </div>
         ) : error ? (
           <div className="py-12 text-center">
@@ -344,26 +283,6 @@ const App: React.FC = () => {
             </div>
 
             <div className="mt-4 flex flex-col gap-2 max-w-lg mx-auto">
-               {!stepsDone && (
-                  <>
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 md:py-4 rounded-[20px] md:rounded-[25px] flex items-center justify-center gap-2 md:gap-3 shadow-[0_4px_0_0_#4338ca] md:shadow-[0_6px_0_0_#4338ca] active:translate-y-1 active:shadow-[0_3px_0_0_#4338ca] transition-all"
-                    >
-                      <span className="text-xl md:text-2xl">📷</span>
-                      <span className="text-base md:text-lg font-black uppercase tracking-wider">Verificar o meu papel</span>
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      capture="environment"
-                      onChange={handleFileUpload}
-                    />
-                  </>
-               )}
-
               {isFinalSolved && (
                 <div className="p-4 md:p-6 bg-gradient-to-r from-green-500 to-emerald-500 rounded-[20px] md:rounded-[25px] text-center text-white animate-bounce shadow-lg border-2 border-white">
                   <h2 className="text-xl md:text-2xl font-black mb-1">ÉS UM MESTRE! 🏆</h2>
@@ -375,7 +294,7 @@ const App: React.FC = () => {
                 onClick={fetchNewProblem}
                 className="w-full bg-blue-600 text-white font-black py-4 md:py-5 rounded-[20px] md:rounded-[25px] hover:bg-blue-700 transition-all text-lg md:text-xl shadow-[0_6px_0_0_#1d4ed8] md:shadow-[0_8px_0_0_#1d4ed8] active:translate-y-1 active:shadow-[0_4px_0_0_#1d4ed8]"
               >
-                OUTRO PROBLEMA 🎲
+                NOVA CONTA 🎲
               </button>
             </div>
           </>
